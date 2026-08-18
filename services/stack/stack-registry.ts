@@ -6,14 +6,17 @@ import type { StackConfig, StackDetection, StackId, StackPlugin } from './stack.
 import { nodePlugin, NODE_GATE_IDS } from './plugins/node/node-plugin.ts';
 import { golangPlugin } from './plugins/golang/golang-plugin.ts';
 import { GO_GATE_ORDER } from './plugins/golang/golang-plan.logic.ts';
+import { iosPlugin } from './plugins/ios/ios-plugin.ts';
+import { IOS_GATE_ORDER } from './plugins/ios/ios-plan.logic.ts';
 
 /** Built-in stack plugins in detection order. External plugins are deferred (spec D-STACK-001). */
-export const BUILTIN_STACK_PLUGINS: readonly StackPlugin[] = [nodePlugin, golangPlugin];
+export const BUILTIN_STACK_PLUGINS: readonly StackPlugin[] = [nodePlugin, golangPlugin, iosPlugin];
 
 /** Built-in gate ids per plugin — the vocabulary strict config validation checks against. */
 export const BUILTIN_GATE_IDS: Readonly<Record<StackId, readonly string[]>> = {
   node: NODE_GATE_IDS,
   golang: GO_GATE_ORDER,
+  ios: IOS_GATE_ORDER,
 };
 
 /**

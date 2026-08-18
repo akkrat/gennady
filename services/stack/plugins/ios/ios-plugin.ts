@@ -17,7 +17,9 @@ function summarize(project: IosProject): string[] {
   const containerLine =
     container.kind === 'spm'
       ? 'Package.swift (SwiftPM)'
-      : `${path.basename(container.path)} (${container.kind})${project.hybrid ? ' + Package.swift' : ''}`;
+      : container.kind === 'tuist'
+        ? `${path.basename(container.manifest)} (tuist)`
+        : `${path.basename(container.path)} (${container.kind})${project.hybrid ? ' + Package.swift' : ''}`;
 
   return [
     `container: ${containerLine}`,
@@ -27,8 +29,8 @@ function summarize(project: IosProject): string[] {
 }
 
 /**
- * @purpose StackPlugin for iOS/Swift repositories. Detection: `Package.swift`, `*.xcodeproj`
- *   or `*.xcworkspace` at the root — a glob, not a fixed marker name (spec §3).
+ * @purpose StackPlugin for iOS/Swift repositories. Detection: Tuist manifests, `Package.swift`,
+ *   `*.xcodeproj` or `*.xcworkspace` at the root — a glob, not a fixed marker name (spec §3).
  * @implements {StackPlugin} in specs/stack/stack.spec.md
  * @invariant detect() runs no processes — pure filesystem probing.
  * @invariant Gates are container-level; positional targets do not narrow them (like node, D-STACK-006).

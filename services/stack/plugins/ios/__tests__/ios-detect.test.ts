@@ -65,6 +65,26 @@ describe('detectIosProject', () => {
     assert.equal(project?.hybrid, true);
   });
 
+  it('prefers Tuist manifests over generated Xcode containers — the manifest is authoritative', () => {
+    write('Project.swift', 'import ProjectDescription\n');
+    write('CoolApp.xcodeproj/project.pbxproj');
+    write('CoolApp.xcworkspace/contents.xcworkspacedata');
+
+    const project = detectIosProject(root, 'darwin');
+
+    assert.equal(project?.container.kind, 'tuist');
+  });
+
+  it('detects a Tuist workspace manifest and requires no shared scheme', () => {
+    write('Workspace.swift', 'import ProjectDescription\n');
+
+    const project = detectIosProject(root, 'darwin');
+
+    assert.equal(project?.container.kind, 'tuist');
+    const codes = project?.diagnostics.map((d) => d.code);
+    assert.ok(!codes?.includes('IOS_NO_SHARED_SCHEME'), 'tuist needs no shared scheme');
+  });
+
   it('lists shared schemes sorted; user schemes in xcuserdata are ignored', () => {
     write('CoolApp.xcodeproj/xcshareddata/xcschemes/Zeta.xcscheme');
     write('CoolApp.xcodeproj/xcshareddata/xcschemes/Alpha.xcscheme');

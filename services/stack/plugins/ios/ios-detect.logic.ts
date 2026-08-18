@@ -7,7 +7,7 @@ import path from 'node:path';
 import type { StackDiagnostic } from '../../stack.types.ts';
 
 /** Identifier of a tool the ios gates rely on. */
-export type IosToolId = 'swift' | 'xcodebuild' | 'swiftlint' | 'swiftformat';
+export type IosToolId = 'swift' | 'xcodebuild' | 'tuist' | 'swiftlint' | 'swiftformat';
 
 /**
  * @purpose A resolved (or missing) executable the plan needs.
@@ -23,12 +23,13 @@ export type IosTool = {
 };
 
 /**
- * @purpose The buildable container kind. Precedence: workspace > project > Package.swift —
- *   the app target is what ships.
+ * @purpose The buildable container kind. Precedence: tuist > workspace > project >
+ *   Package.swift — Tuist manifests are authoritative; generated containers may be stale.
  * @consumer ios-plan.logic
  */
 export type IosContainer =
   | { readonly kind: 'spm'; readonly manifest: string }
+  | { readonly kind: 'tuist'; readonly manifest: string }
   | { readonly kind: 'project'; readonly path: string }
   | { readonly kind: 'workspace'; readonly path: string };
 
@@ -108,13 +109,21 @@ function findSharedSchemes(containerPath: string): string[] {
 }
 
 /**
- * @purpose Pick the container: workspace > project > Package.swift. Xcode containers are
- *   `<AppName>.xcodeproj` globs, not fixed-name markers — detect() being plugin code allows this.
+ * @purpose Pick the container: tuist > workspace > project > Package.swift. Xcode containers
+ *   are `<AppName>.xcodeproj` globs, not fixed-name markers.
  * @param root Absolute repository root.
  * @param rootEntries Entries of the root directory.
  * @returns Chosen container, or null when the repository is not an ios/Swift project.
  */
 function chooseContainer(root: string, rootEntries: readonly string[]): IosContainer | null {
+  // Tuist repos gitignore their generated .xcodeproj/.xcworkspace — the manifest is authoritative.
+  const tuistManifest = ['Workspace.swift', 'Project.swift'].find((name) =>
+    rootEntries.includes(name)
+  );
+  if (tuistManifest !== undefined) {
+    return { kind: 'tuist', manifest: path.join(root, tuistManifest) };
+  }
+
   const workspace = rootEntries.filter((entry) => entry.endsWith('.xcworkspace')).sort()[0];
   if (workspace !== undefined) {
     return { kind: 'workspace', path: path.join(root, workspace) };
@@ -156,10 +165,14 @@ export function detectIosProject(
   }
 
   const hybrid = container.kind !== 'spm' && rootEntries.includes('Package.swift');
-  const schemes = container.kind === 'spm' ? [] : findSharedSchemes(container.path);
+  const schemes =
+    container.kind === 'project' || container.kind === 'workspace'
+      ? findSharedSchemes(container.path)
+      : [];
   const tools: Record<IosToolId, IosTool> = {
     swift: resolveTool('swift', root),
     xcodebuild: resolveTool('xcodebuild', root),
+    tuist: resolveTool('tuist', root),
     swiftlint: resolveTool('swiftlint', root),
     swiftformat: resolveTool('swiftformat', root),
   };
@@ -189,11 +202,20 @@ export function detectIosProject(
     });
   }
 
-  if (container.kind !== 'spm' && schemes.length === 0) {
+  if ((container.kind === 'project' || container.kind === 'workspace') && schemes.length === 0) {
     diagnostics.push({
       code: 'IOS_NO_SHARED_SCHEME',
       message: `${path.basename(container.path)} has no shared scheme — xcodebuild gates cannot be planned deterministically.`,
       fix: 'Share a scheme in Xcode (Manage Schemes → Shared), or override argv via stack.ios.overrideGates.',
+    });
+  }
+
+  // tuist build/test need no scheme — they default to every buildable/testable target.
+  if (container.kind === 'tuist' && tools.tuist.bin === null) {
+    diagnostics.push({
+      code: 'IOS_TUIST_MISSING',
+      message: `${path.basename(container.manifest)} was detected but tuist is not in PATH.`,
+      fix: 'Install tuist (`brew install tuist` or `mise install tuist`), or skip via stack.ios.skipGates.',
     });
   }
 

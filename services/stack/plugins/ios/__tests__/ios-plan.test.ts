@@ -24,6 +24,7 @@ function spmProject(overrides: Partial<IosProject> = {}): IosProject {
     tools: {
       swift: tool('swift'),
       xcodebuild: tool('xcodebuild'),
+      tuist: tool('tuist'),
       swiftlint: tool('swiftlint'),
       swiftformat: tool('swiftformat'),
     },
@@ -39,6 +40,14 @@ function xcodeProject(overrides: Partial<IosProject> = {}): IosProject {
   return spmProject({
     container: { kind: 'project', path: '/repo/CoolApp.xcodeproj' },
     schemes: ['CoolApp'],
+    ...overrides,
+  });
+}
+
+/** @purpose Build a Tuist fixture — manifest container, no schemes. */
+function tuistProject(overrides: Partial<IosProject> = {}): IosProject {
+  return spmProject({
+    container: { kind: 'tuist', manifest: '/repo/Project.swift' },
     ...overrides,
   });
 }
@@ -93,6 +102,43 @@ describe('planIosGates', () => {
       test?.envFail?.some((predicate) => predicate(70, missingSimulator)),
       'a wrong simulator must classify as ENV_FAIL, not as a code finding'
     );
+  });
+
+  it('uses tuist build/test without requiring a scheme', () => {
+    const gates = planIosGates(tuistProject(), 'darwin');
+
+    assert.deepEqual(gates.find((g) => g.id === 'build')?.argv, ['/usr/bin/tuist', 'build']);
+    assert.deepEqual(gates.find((g) => g.id === 'test')?.argv, ['/usr/bin/tuist', 'test']);
+    assert.equal(gates.find((g) => g.id === 'build')?.skipped, null);
+  });
+
+  it('classifies uninstalled tuist dependencies as ENV_FAIL, not as a code finding', () => {
+    const build = planIosGates(tuistProject(), 'darwin').find((g) => g.id === 'build');
+
+    assert.ok(
+      build?.envFail?.some((predicate) =>
+        predicate(1, "error: The project dependencies were not installed. Run 'tuist install'.")
+      )
+    );
+  });
+
+  it('classifies a missing tuist server token as ENV_FAIL (observed on a live tuist-server repo)', () => {
+    const build = planIosGates(tuistProject(), 'darwin').find((g) => g.id === 'build');
+    const observed =
+      "Token for Tuist was not found. Run 'tuist auth login' to authenticate yourself.";
+
+    assert.ok(build?.envFail?.some((predicate) => predicate(1, observed)));
+  });
+
+  it('skips tuist gates when the tuist binary is missing, with the reason recorded', () => {
+    const gates = planIosGates(
+      tuistProject({ tools: { ...tuistProject().tools, tuist: tool('tuist', false) } }),
+      'darwin'
+    );
+
+    for (const id of ['build', 'test'] as const) {
+      assert.ok(gates.find((g) => g.id === id)?.skipped?.includes('IOS_TUIST_MISSING'));
+    }
   });
 
   it('skips xcodebuild gates without a shared scheme, with the reason recorded', () => {

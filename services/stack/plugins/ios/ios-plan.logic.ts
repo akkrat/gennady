@@ -49,6 +49,14 @@ const XCODE_ENV_FAIL: readonly EnvFailPredicate[] = [
   outputMatches(/license agreements|by running `?sudo xcodebuild -license/i),
 ];
 
+/** Tuist environment breakage on top of Xcode's — missing deps/auth are not code findings. */
+const TUIST_ENV_FAIL: readonly EnvFailPredicate[] = [
+  ...XCODE_ENV_FAIL,
+  outputMatches(/tuist install|dependencies.*not.*(installed|fetched)/i),
+  // Observed live on a server-backed tuist setup: it demands `tuist auth login` before building.
+  outputMatches(/Token for Tuist was not found|tuist auth login/i),
+];
+
 /**
  * @purpose Create a gate that is reported but never executed, with the reason recorded.
  * @param id Gate identifier.
@@ -98,6 +106,12 @@ function xcodeSkipReason(project: IosProject, platform: NodeJS.Platform): string
   if (project.tools.xcodebuild.bin === null) {
     return 'xcodebuild not found in PATH (IOS_XCODEBUILD_MISSING)';
   }
+  if (project.container.kind === 'tuist') {
+    // tuist needs no scheme: build/test default to every buildable/testable target.
+    return project.tools.tuist.bin === null
+      ? 'tuist not found in PATH (IOS_TUIST_MISSING) — install it, or skip via stack.ios.skipGates'
+      : null;
+  }
   if (project.schemes.length === 0) {
     return 'no shared scheme (IOS_NO_SHARED_SCHEME) — share one or override argv via stack.ios.overrideGates';
   }
@@ -106,8 +120,8 @@ function xcodeSkipReason(project: IosProject, platform: NodeJS.Platform): string
 
 /**
  * @purpose Plan the ios gate list for a project.
- * @invariant Gates never mutate the tree: `swiftlint lint` without `--fix`,
- *   `swiftformat --lint`, never a rewriting mode; code signing is disabled for builds.
+ * @invariant Gates never mutate sources: check-only lint/format, signing disabled;
+ *   tuist generation writes only gitignored artifacts (build-output-equivalent).
  * @invariant Emitted gates follow IOS_GATE_ORDER; unrunnable gates carry a skip reason.
  * @param project Detected iOS project.
  * @param [platform] Host platform; defaults to the current process, injectable for tests.
@@ -123,8 +137,10 @@ export function planIosGates(
   const swiftformat = project.tools.swiftformat.bin;
 
   const spm = project.container.kind === 'spm';
+  const tuist = project.container.kind === 'tuist';
   const scheme = project.schemes[0];
   const xcodeSkip = spm ? null : xcodeSkipReason(project, platform);
+  const tuistBin = project.tools.tuist.bin;
   const gates: Gate[] = [];
 
   // #region START_GATE_ASSEMBLY — invariant: emitted gates follow IOS_GATE_ORDER
@@ -148,6 +164,22 @@ export function planIosGates(
                   timeoutMs: GATE_TIMEOUTS_MS[id],
                   outputMeansFailure: false,
                   envFail: XCODE_ENV_FAIL,
+                  skipped: null,
+                }
+          );
+        } else if (tuist) {
+          gates.push(
+            xcodeSkip !== null
+              ? skippedGate(id, project.root, xcodeSkip)
+              : {
+                  id,
+                  stack: 'ios',
+                  label: 'tuist build',
+                  argv: [tuistBin!, 'build'],
+                  cwd: project.root,
+                  timeoutMs: GATE_TIMEOUTS_MS[id],
+                  outputMeansFailure: false,
+                  envFail: TUIST_ENV_FAIL,
                   skipped: null,
                 }
           );
@@ -198,6 +230,22 @@ export function planIosGates(
                   timeoutMs: GATE_TIMEOUTS_MS[id],
                   outputMeansFailure: false,
                   envFail: XCODE_ENV_FAIL,
+                  skipped: null,
+                }
+          );
+        } else if (tuist) {
+          gates.push(
+            xcodeSkip !== null
+              ? skippedGate(id, project.root, xcodeSkip)
+              : {
+                  id,
+                  stack: 'ios',
+                  label: 'tuist test',
+                  argv: [tuistBin!, 'test'],
+                  cwd: project.root,
+                  timeoutMs: GATE_TIMEOUTS_MS[id],
+                  outputMeansFailure: false,
+                  envFail: TUIST_ENV_FAIL,
                   skipped: null,
                 }
           );

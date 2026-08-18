@@ -24,7 +24,7 @@ function summarize(project: IosProject): string[] {
   const lines = [
     `container: ${containerLine}`,
     `schemes:   ${project.schemes.length > 0 ? project.schemes.join(', ') : '(no shared schemes)'}`,
-    `lint-cfg:  ${project.swiftlintConfig ?? '(none found — swiftlint would use its defaults)'}`,
+    `lint-cfg:  ${project.swiftlintConfig ?? '(none found — lint gate is skipped; supply a command via overrideGates)'}`,
   ];
   if (project.nestedManifests.length > 0) {
     lines.splice(1, 0, `nested:    ${project.nestedManifests.join(', ')}`);

@@ -6,8 +6,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import type { IosProject, IosTool, IosToolId } from '../ios-detect.logic.ts';
 
-const { planIosGates, IOS_GATE_ORDER, DEFAULT_TEST_DESTINATION } =
-  await import('../ios-plan.logic.ts');
+const { planIosGates, IOS_GATE_ORDER } = await import('../ios-plan.logic.ts');
 
 /** @purpose Build a resolved tool stub pointing at a fake absolute path. */
 function tool(id: IosToolId, available = true): IosTool {
@@ -94,14 +93,20 @@ describe('planIosGates', () => {
     assert.ok(build?.argv.includes('CODE_SIGNING_ALLOWED=NO'));
   });
 
-  it('plans xcodebuild test against the default simulator destination with env-fail cover', () => {
+  it('never guesses a simulator destination: xcodebuild test is planned as skipped', () => {
     const test = planIosGates(xcodeProject(), 'darwin').find((g) => g.id === 'test');
 
-    assert.ok(test?.argv.includes(DEFAULT_TEST_DESTINATION));
-    const missingSimulator = 'xcodebuild: error: Unable to find a destination matching iPhone 16';
+    assert.ok(test?.skipped?.includes('stack.ios.overrideGates.test'));
+    assert.deepEqual(test?.argv, []);
+  });
+
+  it('keeps env-fail predicates on the skipped test gate for a config-supplied command', () => {
+    const test = planIosGates(xcodeProject(), 'darwin').find((g) => g.id === 'test');
+
+    const missingSimulator = 'xcodebuild: error: Unable to find a destination matching iPhone 42';
     assert.ok(
       test?.envFail?.some((predicate) => predicate(70, missingSimulator)),
-      'a wrong simulator must classify as ENV_FAIL, not as a code finding'
+      'an overridden test command must classify a wrong simulator as ENV_FAIL'
     );
   });
 

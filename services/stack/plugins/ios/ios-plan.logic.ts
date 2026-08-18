@@ -33,13 +33,6 @@ const GATE_TIMEOUTS_MS: Readonly<Record<IosGateId, number>> = {
   format: 2 * 60_000,
 };
 
-/**
- * Default simulator destination for `xcodebuild test`. A concrete device name is
- * environment-specific; a wrong one is classified ENV_FAIL (never a code finding)
- * and repos pin their own via stack.ios.overrideGates.test.
- */
-export const DEFAULT_TEST_DESTINATION = 'platform=iOS Simulator,name=iPhone 16';
-
 /** Environment breakage in Xcode tooling — the code was never exercised. */
 const XCODE_ENV_FAIL: readonly EnvFailPredicate[] = [
   outputMatches(/Unable to find a destination matching/),
@@ -59,12 +52,19 @@ const TUIST_ENV_FAIL: readonly EnvFailPredicate[] = [
 
 /**
  * @purpose Create a gate that is reported but never executed, with the reason recorded.
+ *   Carries envFail so an `overrideGates` argv (which un-skips) keeps ENV_FAIL classification.
  * @param id Gate identifier.
  * @param cwd Working directory the gate would have used.
  * @param reason Why the gate cannot run.
+ * @param [envFail] Predicates preserved for a config-supplied replacement command.
  * @returns A skipped gate carrying the reason.
  */
-function skippedGate(id: IosGateId, cwd: string, reason: string): Gate {
+function skippedGate(
+  id: IosGateId,
+  cwd: string,
+  reason: string,
+  envFail?: readonly EnvFailPredicate[]
+): Gate {
   return {
     id,
     stack: 'ios',
@@ -73,6 +73,7 @@ function skippedGate(id: IosGateId, cwd: string, reason: string): Gate {
     cwd,
     timeoutMs: GATE_TIMEOUTS_MS[id],
     outputMeansFailure: false,
+    envFail,
     skipped: reason,
   };
 }
@@ -251,28 +252,13 @@ export function planIosGates(
           );
         } else {
           gates.push(
-            xcodeSkip !== null
-              ? skippedGate(id, project.root, xcodeSkip)
-              : {
-                  id,
-                  stack: 'ios',
-                  label: `xcodebuild test (${scheme!}, ${DEFAULT_TEST_DESTINATION})`,
-                  argv: [
-                    xcodebuild!,
-                    'test',
-                    ...containerFlags(project),
-                    '-scheme',
-                    scheme!,
-                    '-destination',
-                    DEFAULT_TEST_DESTINATION,
-                    'CODE_SIGNING_ALLOWED=NO',
-                  ],
-                  cwd: project.root,
-                  timeoutMs: GATE_TIMEOUTS_MS[id],
-                  outputMeansFailure: false,
-                  envFail: XCODE_ENV_FAIL,
-                  skipped: null,
-                }
+            skippedGate(
+              id,
+              project.root,
+              xcodeSkip ??
+                'simulator destination is machine-specific — supply the full command via stack.ios.overrideGates.test',
+              XCODE_ENV_FAIL
+            )
           );
         }
         break;

@@ -47,6 +47,8 @@ export type IosProject = {
   readonly hybrid: boolean;
   /** @purpose Shared scheme names, sorted; xcodebuild gates need one to be deterministic. */
   readonly schemes: readonly string[];
+  /** @purpose Root-relative directories holding their own Tuist manifests (nested projects). */
+  readonly nestedManifests: readonly string[];
   /** @purpose Resolved tools keyed by id. */
   readonly tools: Readonly<Record<IosToolId, IosTool>>;
   /** @purpose Absolute path to `.swiftlint.yml`, or null. */
@@ -108,6 +110,54 @@ function findSharedSchemes(containerPath: string): string[] {
     .sort();
 }
 
+/** Directories never scanned for nested manifests. */
+const SKIP_DIRS = new Set(['node_modules', 'Tuist', 'Derived', 'Pods', 'vendor', 'External']);
+
+/** Depth bound for the nested-manifest scan. */
+const MAX_NESTED_DEPTH = 2;
+
+/**
+ * @purpose Find directories below the root that carry their own Tuist manifest —
+ *   multi-project repos (app + components) need one verify run per manifest root.
+ * @param root Absolute repository root.
+ * @returns Sorted root-relative directories, e.g. `MobileApp`.
+ */
+function findNestedManifests(root: string): string[] {
+  const found: string[] = [];
+
+  const walk = (dir: string, depth: number): void => {
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+
+    for (const entry of entries) {
+      if (!entry.isDirectory() || entry.name.startsWith('.') || SKIP_DIRS.has(entry.name)) {
+        continue;
+      }
+      if (entry.name.endsWith('.xcodeproj') || entry.name.endsWith('.xcworkspace')) {
+        continue;
+      }
+      const child = path.join(dir, entry.name);
+      if (
+        fs.existsSync(path.join(child, 'Project.swift')) ||
+        fs.existsSync(path.join(child, 'Workspace.swift'))
+      ) {
+        found.push(path.relative(root, child));
+        continue;
+      }
+      if (depth < MAX_NESTED_DEPTH) {
+        walk(child, depth + 1);
+      }
+    }
+  };
+
+  walk(root, 1);
+  return found.sort();
+}
+
 /**
  * @purpose Pick the container: tuist > workspace > project > Package.swift. Xcode containers
  *   are `<AppName>.xcodeproj` globs, not fixed-name markers.
@@ -165,6 +215,7 @@ export function detectIosProject(
   }
 
   const hybrid = container.kind !== 'spm' && rootEntries.includes('Package.swift');
+  const nestedManifests = findNestedManifests(root);
   const schemes =
     container.kind === 'project' || container.kind === 'workspace'
       ? findSharedSchemes(container.path)
@@ -210,6 +261,14 @@ export function detectIosProject(
     });
   }
 
+  if (nestedManifests.length > 0) {
+    diagnostics.push({
+      code: 'IOS_NESTED_PROJECTS',
+      message: `Nested Tuist manifests found: ${nestedManifests.join(', ')} — root gates cover only the root project.`,
+      fix: 'Run `gennady verify --root=<dir>` per project, or add stack.ios.extraGates with cwd pointing at each.',
+    });
+  }
+
   // tuist build/test need no scheme — they default to every buildable/testable target.
   if (container.kind === 'tuist' && tools.tuist.bin === null) {
     diagnostics.push({
@@ -233,6 +292,7 @@ export function detectIosProject(
     container,
     hybrid,
     schemes,
+    nestedManifests,
     tools,
     swiftlintConfig,
     swiftformatConfig,

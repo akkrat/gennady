@@ -21,6 +21,7 @@ function spmProject(overrides: Partial<IosProject> = {}): IosProject {
     container: { kind: 'spm', manifest: '/repo/Package.swift' },
     hybrid: false,
     schemes: [],
+    nestedManifests: [],
     tools: {
       swift: tool('swift'),
       xcodebuild: tool('xcodebuild'),

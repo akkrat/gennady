@@ -75,6 +75,17 @@ describe('detectIosProject', () => {
     assert.equal(project?.container.kind, 'tuist');
   });
 
+  it('surfaces nested Tuist manifests with IOS_NESTED_PROJECTS — multi-project repos', () => {
+    write('Project.swift', 'import ProjectDescription\n');
+    write('MobileApp/Project.swift', 'import ProjectDescription\n');
+    write('node_modules/dep/Project.swift', 'never scanned\n');
+
+    const project = detectIosProject(root, 'darwin');
+
+    assert.deepEqual(project?.nestedManifests, ['MobileApp']);
+    assert.ok(project?.diagnostics.some((d) => d.code === 'IOS_NESTED_PROJECTS'));
+  });
+
   it('detects a Tuist workspace manifest and requires no shared scheme', () => {
     write('Workspace.swift', 'import ProjectDescription\n');
 

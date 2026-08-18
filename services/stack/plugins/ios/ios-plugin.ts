@@ -21,11 +21,15 @@ function summarize(project: IosProject): string[] {
         ? `${path.basename(container.manifest)} (tuist)`
         : `${path.basename(container.path)} (${container.kind})${project.hybrid ? ' + Package.swift' : ''}`;
 
-  return [
+  const lines = [
     `container: ${containerLine}`,
     `schemes:   ${project.schemes.length > 0 ? project.schemes.join(', ') : '(no shared schemes)'}`,
     `lint-cfg:  ${project.swiftlintConfig ?? '(none found — swiftlint would use its defaults)'}`,
   ];
+  if (project.nestedManifests.length > 0) {
+    lines.splice(1, 0, `nested:    ${project.nestedManifests.join(', ')}`);
+  }
+  return lines;
 }
 
 /**

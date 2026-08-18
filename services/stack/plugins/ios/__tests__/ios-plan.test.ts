@@ -169,13 +169,17 @@ describe('planIosGates', () => {
     assert.ok(gates.find((g) => g.id === 'format')?.skipped?.includes('.swiftformat'));
   });
 
-  it('passes the repo lint config explicitly and marks default-config runs in the label', () => {
+  it('passes the repo lint config explicitly; without one the gate is skipped, never guessed', () => {
     const withConfig = planIosGates(spmProject(), 'darwin').find((g) => g.id === 'lint');
     const withoutConfig = planIosGates(spmProject({ swiftlintConfig: null }), 'darwin').find(
       (g) => g.id === 'lint'
     );
 
     assert.ok(withConfig?.argv.includes('--config'));
-    assert.ok(withoutConfig?.label.includes('default config'));
+    assert.ok(withoutConfig?.skipped?.includes('stack.ios.overrideGates.lint'));
+    assert.ok(
+      withoutConfig?.envFail !== undefined && withoutConfig.envFail.length > 0,
+      'a config-supplied lint command must keep ENV_FAIL classification'
+    );
   });
 });

@@ -272,18 +272,22 @@ export function planIosGates(
               'swiftlint not found (PATH or ./bin) — install it, or skip via stack.ios.skipGates'
             )
           );
+        } else if (project.swiftlintConfig === null) {
+          gates.push(
+            skippedGate(
+              id,
+              project.root,
+              'no .swiftlint.yml at the root — default rules produce noise; add one, or supply the full command via stack.ios.overrideGates.lint',
+              [outputMatches(/^Fatal error:/m), ...XCODE_ENV_FAIL]
+            )
+          );
         } else {
           gates.push({
             id,
             stack: 'ios',
             // `swiftlint lint` is check-only; the rewriting `swiftlint --fix` is forbidden as a gate.
-            label: `swiftlint${project.swiftlintConfig === null ? ' (default config)' : ''}`,
-            argv: [
-              swiftlint,
-              'lint',
-              '--strict',
-              ...(project.swiftlintConfig !== null ? ['--config', project.swiftlintConfig] : []),
-            ],
+            label: 'swiftlint',
+            argv: [swiftlint, 'lint', '--strict', '--config', project.swiftlintConfig],
             cwd: project.root,
             timeoutMs: GATE_TIMEOUTS_MS[id],
             outputMeansFailure: false,
